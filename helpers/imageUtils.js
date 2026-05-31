@@ -878,8 +878,15 @@ async function applyWinnerEffect(
 // ------------------------------------------------------------------------------
 
 const { REQUEST_TIMEOUT } = require('./requestConfig');
+const { getGuardedAgents } = require('./urlValidator');
 
-async function downloadImage(urlOrPath) {
+// downloadImage(urlOrPath, options)
+//   allowPrivate: skip the SSRF private-IP guard on the network fetch. Only set
+//                 when the caller has explicitly allow-listed a private host.
+//   remoteOnly:   reject local file paths and data: URLs, only allow http(s)
+//                 fetches. Set for user-supplied URLs so they can never reach the
+//                 filesystem branch, regardless of upstream validation.
+async function downloadImage(urlOrPath, { allowPrivate = false, remoteOnly = false } = {}) {
     // Validate URL exists
     if (!urlOrPath || typeof urlOrPath !== 'string') {
         throw new Error(`Invalid URL or path: ${urlOrPath}`);
@@ -887,6 +894,9 @@ async function downloadImage(urlOrPath) {
 
     // Handle data URLs (base64 embedded images)
     if (urlOrPath.startsWith('data:image/')) {
+        if (remoteOnly) {
+            throw new Error('data: URLs are not allowed for this image source');
+        }
         const matches = urlOrPath.match(/^data:image\/[^;]+;base64,(.+)$/);
         if (matches && matches[1]) {
             return Buffer.from(matches[1], 'base64');
@@ -896,16 +906,22 @@ async function downloadImage(urlOrPath) {
 
     // If it's a local file path, load from filesystem
     if (urlOrPath.startsWith('/') || urlOrPath.startsWith('./') || urlOrPath.startsWith('../')) {
+        if (remoteOnly) {
+            throw new Error('Local file paths are not allowed for this image source');
+        }
         return fs.readFile(path.resolve(urlOrPath));
     }
-    
-    // Otherwise, treat as URL with timeout protection
+
+    // Otherwise, treat as URL with timeout protection. The guarded agents
+    // re-validate the destination IP at connect time, so redirects (maxRedirects)
+    // and DNS-rebinding cannot reach private/internal addresses.
     try {
         const response = await axios.get(urlOrPath, {
             responseType: 'arraybuffer',
             timeout: REQUEST_TIMEOUT,
             maxRedirects: 5,
-            headers: { 
+            ...getGuardedAgents(allowPrivate),
+            headers: {
                 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 'Accept': 'image/png,image/jpeg,image/jpg,*/*;q=0.8',
                 'Accept-Encoding': 'gzip, deflate, br',
@@ -970,17 +986,20 @@ async function downloadImage(urlOrPath) {
  * @param {string} urlOrPath - URL or path to the image
  * @returns {Promise<Buffer>} Image buffer
  */
-async function downloadImageWithSvgSupport(urlOrPath) {
+async function downloadImageWithSvgSupport(urlOrPath, { allowPrivate = false, remoteOnly = false } = {}) {
     // Check if it's an SVG by URL extension
-    const isSvgUrl = urlOrPath.toLowerCase().endsWith('.svg');
+    const isSvgUrl = typeof urlOrPath === 'string' && urlOrPath.toLowerCase().endsWith('.svg');
 
     if (isSvgUrl) {
         try {
-            // Download SVG and convert to PNG
+            // Download SVG and convert to PNG. Guarded agents re-validate the
+            // destination IP on every hop to prevent redirect/rebinding SSRF.
             const { rasterizeLogo } = require('./svgUtils');
             const response = await axios.get(urlOrPath, {
                 responseType: 'arraybuffer',
                 timeout: REQUEST_TIMEOUT,
+                maxRedirects: 5,
+                ...getGuardedAgents(allowPrivate),
                 headers: { 'User-Agent': 'Mozilla/5.0' }
             });
 
@@ -997,7 +1016,7 @@ async function downloadImageWithSvgSupport(urlOrPath) {
     }
 
     // Not SVG, use regular download
-    return downloadImage(urlOrPath);
+    return downloadImage(urlOrPath, { allowPrivate, remoteOnly });
 }
 
 async function selectBestLogo(team, backgroundColor) {

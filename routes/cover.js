@@ -69,18 +69,24 @@ module.exports = {
 
                 const overlaysOn = isEventOverlaysEnabled();
                 let safeIconUrl;
+                let iconAllowPrivate = false;
                 if (overlaysOn && iconurl) {
                     const insecure = getInsecureOverlayConfig();
-                    if (insecure === true) {
-                        safeIconUrl = iconurl;
-                    } else {
-                        try {
-                            safeIconUrl = validatePublicImageUrl(iconurl, {
-                                allowedHosts: Array.isArray(insecure) ? insecure : []
-                            });
-                        } catch (err) {
-                            return res.status(400).json({ error: `Invalid iconurl: ${err.message}` });
+                    try {
+                        if (insecure === true) {
+                            // Operator opted to allow all private/local URLs, but still
+                            // enforce a valid http(s) URL (no file:// / local paths).
+                            safeIconUrl = validatePublicImageUrl(iconurl, { allowPrivate: true });
+                            iconAllowPrivate = true;
+                        } else {
+                            const allowed = Array.isArray(insecure) ? insecure : [];
+                            safeIconUrl = validatePublicImageUrl(iconurl, { allowedHosts: allowed });
+                            // Only drop the network SSRF guard for the explicitly allow-listed host.
+                            const iconHost = new URL(safeIconUrl).hostname.toLowerCase().replace(/^\[|\]$/g, '');
+                            iconAllowPrivate = allowed.includes(iconHost);
                         }
+                    } catch (err) {
+                        return res.status(400).json({ error: `Invalid iconurl: ${err.message}` });
                     }
                 }
 
@@ -91,6 +97,7 @@ module.exports = {
                     title: overlaysOn ? title : undefined,
                     subtitle: overlaysOn ? subtitle : undefined,
                     iconurl: safeIconUrl,
+                    iconAllowPrivate,
                     league: leagueObj.shortName
                 });
             }

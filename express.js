@@ -76,15 +76,15 @@ function init(port) {
         next();
     });
 
-    // Get real IP from proxy headers and log requests
+    // Client IP is derived by Express from `trust proxy` (see TRUST_PROXY above):
+    // it walks X-Forwarded-For for the configured number of hops. Do NOT trust a
+    // raw client-supplied header (e.g. X-Real-IP) for req.ip here — that would let
+    // any client spoof their IP to evade rate limiting and poison logs. Configure
+    // your reverse proxy to set X-Forwarded-For and TRUST_PROXY to the *exact*
+    // number of trusted hops (setting it too high re-enables XFF spoofing).
     app.use((req, res, next) => {
-        // Get real IP from proxy headers (nginx X-Real-IP)
-        const realIp = req.headers['x-real-ip'] || req.ip;
-        req.ip = realIp;
-        
-        // Log the request (will be updated if cached)
+        // Mark request start time for latency logging.
         req._startTime = Date.now();
-        
         next();
     });
 

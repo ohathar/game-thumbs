@@ -28,8 +28,8 @@ async function generateLeagueThumb(leagueLogoUrl, options = {}) {
     const subtitle = options.subtitle || null;
     const iconurl = options.iconurl || null;
     const league = options.league;
-    
-    return generateLeagueImage(leagueLogoUrl, width, height, leagueLogoUrlAlt, title, subtitle, iconurl, league);
+
+    return generateLeagueImage(leagueLogoUrl, width, height, leagueLogoUrlAlt, title, subtitle, iconurl, league, false, options.iconAllowPrivate || false);
 }
 
 async function generateLeagueCover(leagueLogoUrl, options = {}) {
@@ -40,8 +40,8 @@ async function generateLeagueCover(leagueLogoUrl, options = {}) {
     const subtitle = options.subtitle || null;
     const iconurl = options.iconurl || null;
     const league = options.league;
-    
-    return generateLeagueImage(leagueLogoUrl, width, height, leagueLogoUrlAlt, title, subtitle, iconurl, league);
+
+    return generateLeagueImage(leagueLogoUrl, width, height, leagueLogoUrlAlt, title, subtitle, iconurl, league, false, options.iconAllowPrivate || false);
 }
 
 // ------------------------------------------------------------------------------
@@ -208,7 +208,7 @@ function drawContents(canvas, logo, league, title = null, subtitle = null, icon 
     }
 }
 
-async function generateLeagueImage(leagueLogoUrl, width, height, leagueLogoUrlAlt, title, subtitle, iconurl, league, centered = false) {
+async function generateLeagueImage(leagueLogoUrl, width, height, leagueLogoUrlAlt, title, subtitle, iconurl, league, centered = false, iconAllowPrivate = false) {
     const canvas = createCanvas(width, height);
     const ctx = canvas.getContext('2d');
     
@@ -260,7 +260,9 @@ async function generateLeagueImage(leagueLogoUrl, width, height, leagueLogoUrlAl
         // Load optional Icon
         let iconBuffer, icon;
         if (iconurl) {
-            iconBuffer = await downloadImageWithSvgSupport(iconurl);
+            // User-supplied icon: force a remote-only fetch (no local/data paths)
+            // and keep the SSRF guard unless the host was explicitly allow-listed.
+            iconBuffer = await downloadImageWithSvgSupport(iconurl, { allowPrivate: iconAllowPrivate, remoteOnly: true });
             icon = await loadImage(iconBuffer);
         }
         
