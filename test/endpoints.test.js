@@ -288,7 +288,31 @@ const testCases = [
         saveImage: true,
         filename: 'leaguecover-nba.png'
     },
-    
+    {
+        name: 'Season Thumb Route - NHL (path season)',
+        endpoint: '/nhl/seasonthumb/2025-26',
+        expectedStatus: 200,
+        expectedType: 'image/png',
+        saveImage: true,
+        filename: 'seasonthumb-nhl-2025-26.png'
+    },
+    {
+        name: 'Season Thumb Route - NHL (query season)',
+        endpoint: '/nhl/seasonthumb?season=2025-26',
+        expectedStatus: 200,
+        expectedType: 'image/png',
+        saveImage: true,
+        filename: 'seasonthumb-nhl-query.png'
+    },
+    {
+        name: 'Season Cover Route - NBA (path season)',
+        endpoint: '/nba/seasoncover/2025-26',
+        expectedStatus: 200,
+        expectedType: 'image/png',
+        saveImage: true,
+        filename: 'seasoncover-nba-2025-26.png'
+    },
+
     // Error cases
     {
         name: 'Invalid League',

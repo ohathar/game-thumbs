@@ -12,6 +12,8 @@ const { fontRegistry } = require('../helpers/fontRegistry');
 module.exports = {
     generateLeagueThumb,
     generateLeagueCover,
+    generateSeasonThumb,
+    generateSeasonCover,
     generateTeamThumb,
     generateTeamCover
 };
@@ -43,8 +45,50 @@ async function generateLeagueCover(leagueLogoUrl, options = {}) {
 }
 
 // ------------------------------------------------------------------------------
+// Season Image Generation Functions
+// A season image is a league image whose title/subtitle describe a season,
+// e.g. title "2025-26" over subtitle "Season". It reuses the league image
+// layout (logo + centered title/subtitle on a moody gradient).
+// ------------------------------------------------------------------------------
 
-function drawContents(canvas, logo, league, title = null, subtitle = null, icon = null) {
+async function generateSeasonThumb(leagueLogoUrl, options = {}) {
+    const width = options.width || 1440;
+    const height = options.height || 1080;
+
+    return generateSeasonImage(leagueLogoUrl, width, height, options);
+}
+
+async function generateSeasonCover(leagueLogoUrl, options = {}) {
+    const width = options.width || 1080;
+    const height = options.height || 1440;
+
+    return generateSeasonImage(leagueLogoUrl, width, height, options);
+}
+
+function generateSeasonImage(leagueLogoUrl, width, height, options) {
+    // Default the title to the season string and the subtitle to "Season",
+    // while still honoring explicit title/subtitle overrides. When no season
+    // (and no overrides) are provided, this renders the bare league logo.
+    const season = options.season || null;
+    const title = options.title || season;
+    const subtitle = options.subtitle || (season ? 'Season' : null);
+
+    return generateLeagueImage(
+        leagueLogoUrl,
+        width,
+        height,
+        options.leagueLogoUrlAlt,
+        title,
+        subtitle,
+        null,            // season images don't use the icon layout
+        options.league,
+        true             // center the logo + season block as one group
+    );
+}
+
+// ------------------------------------------------------------------------------
+
+function drawContents(canvas, logo, league, title = null, subtitle = null, icon = null, centered = false) {
     const titleFont = fontRegistry[`${league}_title`] ? `${league}_title` : 'default_title';
     const subtitleFont = fontRegistry[`${league}_subtitle`] ? `${league}_subtitle` : 'default_subtitle';
     const titleFlags = fontRegistry[titleFont];
@@ -59,7 +103,40 @@ function drawContents(canvas, logo, league, title = null, subtitle = null, icon 
     // 3) League logo and icon (title/subtitle optional in this layout)
     let logoSize, logoHeight, titleSize, titleHeight, subtitleSize, subtitleHeight, iconSize, iconHeight;
 
-    if (title && !icon) {
+    if (title && !icon && centered) {
+        // Layout 2c - Logo + Title/subtitle centered as a single block.
+        // Unlike Layout 2 (which pins the title to the vertical center), this
+        // stacks logo -> title -> subtitle and centers the whole group, so the
+        // bottom half isn't left empty (used by the season images).
+        canvas.font = `${titleFlags} 50px ${titleFont}, system`;
+        canvas.fillStyle = "white";
+        canvas.textAlign = "center";
+        canvas.textBaseline = "middle";
+        const textMetrics = canvas.measureText(title);
+        titleSize = Math.min(100,50*(width*0.9)/textMetrics.width);
+        // Subtitle Size is 3/4 of title size
+        subtitleSize = titleSize*0.75;
+        // Logo is sized to the smaller dimension, leaving room for the text
+        logoSize = Math.min(width, height)*0.45;
+        // drawLogoMaintainAspect fits the logo inside a logoSize square and
+        // centers it, so a wide (landscape) logo only fills part of that box
+        // vertically. Center on the logo's *actual* drawn height so the block
+        // isn't thrown off-center.
+        const logoAspect = (logo && logo.width && logo.height) ? (logo.width / logo.height) : 1;
+        const drawnLogoHeight = logoAspect > 1 ? logoSize / logoAspect : logoSize;
+        // Breathing room between the logo and the title
+        const logoGap = titleSize*0.5;
+        // Total height of the logo + title (+ subtitle) block
+        const groupHeight = drawnLogoHeight + logoGap + titleSize + (subtitle ? (10 + subtitleSize) : 0);
+        // Center the whole block vertically
+        const startY = (height - groupHeight)/2;
+        // Offset the logo box upward so the centered logo lands at startY
+        logoHeight = startY - (logoSize - drawnLogoHeight)/2;
+        titleHeight = startY + drawnLogoHeight + logoGap + titleSize/2;
+        // Subtitle has 10px of padding below title (matches Layout 2)
+        subtitleHeight = titleHeight + 0.5*titleSize + subtitleSize/2 + 10;
+    }
+    else if (title && !icon) {
         // Layout 2 - League Logo and Title/subtitle (no icon)
         // Title is vertically centered
         titleHeight = height/2;
@@ -131,7 +208,7 @@ function drawContents(canvas, logo, league, title = null, subtitle = null, icon 
     }
 }
 
-async function generateLeagueImage(leagueLogoUrl, width, height, leagueLogoUrlAlt, title, subtitle, iconurl, league) {
+async function generateLeagueImage(leagueLogoUrl, width, height, leagueLogoUrlAlt, title, subtitle, iconurl, league, centered = false) {
     const canvas = createCanvas(width, height);
     const ctx = canvas.getContext('2d');
     
@@ -210,7 +287,7 @@ async function generateLeagueImage(leagueLogoUrl, width, height, leagueLogoUrlAl
                 ctx.shadowOffsetX = 0;
                 ctx.shadowOffsetY = 10;
 
-                drawContents(ctx, altLogo, league, title, subtitle, icon);
+                drawContents(ctx, altLogo, league, title, subtitle, icon, centered);
                 
                 ctx.restore();
             } catch (altError) {
@@ -220,7 +297,7 @@ async function generateLeagueImage(leagueLogoUrl, width, height, leagueLogoUrlAl
                 ctx.shadowOffsetX = 0;
                 ctx.shadowOffsetY = 10;
 
-                drawContents(ctx, logo, league, title, subtitle, icon);
+                drawContents(ctx, logo, league, title, subtitle, icon, centered);
                 
                 ctx.restore();
             }
@@ -231,8 +308,8 @@ async function generateLeagueImage(leagueLogoUrl, width, height, leagueLogoUrlAl
             ctx.shadowOffsetX = 0;
             ctx.shadowOffsetY = 10;
 
-            drawContents(ctx, logo, league, title, subtitle, icon);
-            
+            drawContents(ctx, logo, league, title, subtitle, icon, centered);
+
             ctx.restore();
         }
         
@@ -258,7 +335,7 @@ async function generateLeagueImage(leagueLogoUrl, width, height, leagueLogoUrlAl
             ctx.shadowOffsetX = 0;
             ctx.shadowOffsetY = 10;
 
-            drawContents(ctx, logo, title, league, subtitle, icon);
+            drawContents(ctx, logo, title, league, subtitle, icon, centered);
 
             ctx.restore();
         } catch (logoError) {
